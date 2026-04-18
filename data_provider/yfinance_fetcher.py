@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """
 ===================================
-YfinanceFetcher - 兜底数据源 (Priority 4)
+YfinanceFetcher - 兜底数据源 (Priority 1)
 ===================================
 
 数据来源：Yahoo Finance（通过 yfinance 库）
