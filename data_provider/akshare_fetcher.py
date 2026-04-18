@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """
 ===================================
-AkshareFetcher - 主数据源 (Priority 1)
+AkshareFetcher - 主数据源 (Priority 2)
 ===================================
 
 数据来源：
@@ -255,7 +255,7 @@ class AkshareFetcher(BaseFetcher):
     """
     Akshare 数据源实现
     
-    优先级：1（最高）
+    优先级：2（最高）
     数据来源：东方财富网爬虫
     
     关键策略：
@@ -265,7 +265,7 @@ class AkshareFetcher(BaseFetcher):
     """
     
     name = "AkshareFetcher"
-    priority = int(os.getenv("AKSHARE_PRIORITY", "1"))
+    priority = int(os.getenv("AKSHARE_PRIORITY", "2"))
     
     def __init__(self, sleep_min: float = 2.0, sleep_max: float = 5.0):
         """
