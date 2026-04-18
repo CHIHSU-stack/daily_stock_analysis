@@ -856,19 +856,16 @@ class DataFetcherManager:
           0. FinMind (Priority 0) - 最高优先级
           1. YfinanceFetcher (Priority 1)
           2. AkshareFetcher (Priority 2)
-          3. PytdxFetcher (Priority 3) - 通达信
-          4. EfinanceFetcher (Priority 4)
+          3. EfinanceFetcher (Priority 4)
         
         """
         from .efinance_fetcher import EfinanceFetcher
         from .akshare_fetcher import AkshareFetcher
-        from .pytdx_fetcher import PytdxFetcher
         from .yfinance_fetcher import YfinanceFetcher
         from .finmind_fetcher import FinMindFetcher
         # 创建所有数据源实例（优先级在各 Fetcher 的 __init__ 中确定）
         efinance = EfinanceFetcher()
         akshare = AkshareFetcher()
-        pytdx = PytdxFetcher()      # 通达信数据源（可配 PYTDX_HOST/PYTDX_PORT）
         yfinance = YfinanceFetcher()
         finmind = FinMindFetcher()
 
@@ -879,7 +876,6 @@ class DataFetcherManager:
                 finmind,
                 efinance,
                 akshare,
-                pytdx,
                 yfinance
             ]
 
