@@ -428,6 +428,36 @@ def run_agent_loop(
     except Exception as e:
         logger.debug(f"籌碼數據預載失敗（非致命錯誤）: {e}")
 
+    # --- 終極指令注入：確保 AI 必須在報告中顯示台股籌碼 ---
+    try:
+        # 1. 先抓取當前標的（假設 user content 包含代碼）
+        user_msg = next((m["content"] for m in messages if m["role"] == "user"), "")
+        match = re.search(r"(\d{4}\.TW(?:O)?)", user_msg.upper())
+        
+        if match:
+            stock_code = match.group(1)
+            # 2. 強制執行一次工具獲取數據
+            fm_res = tool_registry.execute("get_realtime_quote", stock_code=stock_code)
+            # 3. 取得我們剛才在 fetcher 裡寫好的 chip_analysis
+            chip_data = getattr(fm_res, 'chip_analysis', '無數據')
+            
+            # 4. 【核心動作】在 System Prompt 最前面插入一條「死指令」
+            messages.insert(0, {
+                "role": "system",
+                "content": f"""
+【台股籌碼強制指令】
+當前分析標的為台股: {stock_code}。
+最新的法人數據為: {chip_data}。
+你必須在最終報告的 JSON 中：
+1. 將 'analysis_summary' (分析摘要) 的第一句話設為該籌碼動態。
+2. 在 'dashboard.intelligence.key_signals' 中新增一條關於『三大法人買賣超』的信號。
+3. 嚴禁忽略上述數據，這比技術指標更重要。
+"""
+            })
+            logger.info(f"已成功對 AI 下達台股籌碼死指令: {chip_data}")
+    except Exception as e:
+        logger.debug(f"注入死指令失敗: {e}")
+
     
 
     for step in range(max_steps):
