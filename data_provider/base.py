@@ -1193,7 +1193,21 @@ class DataFetcherManager:
         # primary_quote holds the first successful result; we may supplement
         # missing fields (volume_ratio, turnover_rate, etc.) from later sources.
         primary_quote = None
-        
+
+
+        df = self.api.taiwan_stock_tick_snapshot(stock_ids=[fm_code])
+        if df.empty:
+            # --- 補救邏輯：快照失敗，改抓當日日線最後一筆 ---
+            logger.warning(f"⚠️ {stock_code} 快照失效，嘗試抓取當日日線補位...")
+            from datetime import datetime
+            today = datetime.now().strftime('%Y-%m-%d')
+            df_backup = self.api.taiwan_stock_daily(stock_id=fm_code, start_date=today)
+            if not df_backup.empty:
+                row = df_backup.iloc[-1]
+            else:
+                return None # 兩邊都抓不到才放棄
+
+
         for source in source_priority:
             source = source.strip().lower()
             
