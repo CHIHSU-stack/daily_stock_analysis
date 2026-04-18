@@ -43,8 +43,10 @@ def _build_lookup_keys(canonical_code: str, display_code: str) -> Iterable[str]:
 
     if "." in canonical_upper:
         base, suffix = canonical_upper.rsplit(".", 1)
-        if suffix in {"SH", "SZ", "SS", "BJ"} and base.isdigit():
+        if suffix in {"SH", "SZ", "SS", "BJ","TW","TWO"} and base.isdigit():
             _add_lookup_key(keys, base)
+            if suffix in {"TW", "TWO"}:
+                _add_lookup_key(keys, canonical_upper)
         elif suffix == "HK" and base.isdigit() and 1 <= len(base) <= 5:
             digits = base.zfill(5)
             _add_lookup_key(keys, digits)
