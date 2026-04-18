@@ -439,11 +439,9 @@ class BaseFetcher(ABC):
         - Volume_Ratio: 量比（今日成交量 / 5日平均成交量）
         """
         df = df.copy()
-        
-        # 移动平均线
-        df['ma5'] = df['close'].rolling(window=5, min_periods=1).mean()
-        df['ma10'] = df['close'].rolling(window=10, min_periods=1).mean()
-        df['ma20'] = df['close'].rolling(window=20, min_periods=1).mean()
+        df['ma5'] = df['close'].rolling(window=5).mean()
+        df['ma10'] = df['close'].rolling(window=10).mean()
+        df['ma20'] = df['close'].rolling(window=20).mean()
         
         # 量比：当日成交量 / 5日平均成交量
         # 注意：此处的 volume_ratio 是“日线成交量 / 前5日均量(shift 1)”的相对倍数，
