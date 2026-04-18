@@ -857,20 +857,17 @@ class DataFetcherManager:
           1. YfinanceFetcher (Priority 1)
           2. AkshareFetcher (Priority 2)
           3. PytdxFetcher (Priority 3) - 通达信
-          4. TushareFetcher (Priority 3)
-          5. EfinanceFetcher (Priority 4)
+          4. EfinanceFetcher (Priority 4)
         
         """
         from .efinance_fetcher import EfinanceFetcher
         from .akshare_fetcher import AkshareFetcher
-        from .tushare_fetcher import TushareFetcher
         from .pytdx_fetcher import PytdxFetcher
         from .yfinance_fetcher import YfinanceFetcher
         from .finmind_fetcher import FinMindFetcher
         # 创建所有数据源实例（优先级在各 Fetcher 的 __init__ 中确定）
         efinance = EfinanceFetcher()
         akshare = AkshareFetcher()
-        tushare = TushareFetcher()  # 会根据 Token 配置自动调整优先级
         pytdx = PytdxFetcher()      # 通达信数据源（可配 PYTDX_HOST/PYTDX_PORT）
         yfinance = YfinanceFetcher()
         finmind = FinMindFetcher()
@@ -882,7 +879,6 @@ class DataFetcherManager:
                 finmind,
                 efinance,
                 akshare,
-                tushare,
                 pytdx,
                 yfinance
             ]
