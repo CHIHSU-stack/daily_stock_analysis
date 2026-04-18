@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """
 ===================================
-EfinanceFetcher - 优先数据源 (Priority 0)
+EfinanceFetcher - 优先数据源 (Priority 99)
 ===================================
 
 数据来源：东方财富爬虫（通过 efinance 库）
@@ -253,7 +253,7 @@ class EfinanceFetcher(BaseFetcher):
     """
     
     name = "EfinanceFetcher"
-    priority = int(os.getenv("EFINANCE_PRIORITY", "0"))  # 最高优先级，排在 AkshareFetcher 之前
+    priority = int(os.getenv("EFINANCE_PRIORITY", "99")) 
     
     def __init__(self, sleep_min: float = 1.5, sleep_max: float = 3.0):
         """
