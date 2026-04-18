@@ -272,22 +272,7 @@ def resolve_skill_prompt_state(config=None, skills: Optional[List[str]] = None) 
 
 
 def build_agent_executor(config=None, skills: Optional[List[str]] = None):
-    """Build and return a configured AgentExecutor (or future orchestrator).
-
-    When ``AGENT_ARCH=multi``, this returns an orchestrator that manages
-    multiple specialised agents. Otherwise it returns the legacy single-agent
-    executor.
-
-    Args:
-        config: Application config object.  When *None*, ``get_config()`` is
-                called automatically.
-        skills: Skill ids to activate.  When *None* falls back to
-                ``config.agent_skills``; if that is also empty falls back to
-                the central default skill set.
-
-    Returns:
-        A ready-to-call :class:`src.agent.executor.AgentExecutor` instance.
-    """
+    """Build and return a configured AgentExecutor (or future orchestrator)."""
     if config is None:
         from src.config import get_config
         config = get_config()
@@ -309,6 +294,21 @@ def build_agent_executor(config=None, skills: Optional[List[str]] = None):
 
     llm_adapter = LLMToolAdapter(config)
 
+    # --- 🟢 核心修改：解鎖台股身份與注入籌碼指令 ---
+    # 1. 取得原始指令並抹除「僅限A股」的字眼
+    raw_inst = prompt_state.skill_instructions
+    tw_skill_inst = raw_inst.replace("A股", "股票").replace("A 股", "股票")
+    
+    # 2. 注入台股專屬規則
+    tw_skill_inst += """
+\n## 台股分析特別指令 (Taiwan Market Support)
+1. **身份宣告**：你現在支援全球市場分析，包含 A股、美股與【台股 (.TW/.TWO)】。
+2. **籌碼優先**：分析台股時，必須優先檢查工具回傳中的 `chip_analysis` 欄位。
+3. **專業術語**：請識別『外資』、『投信』、『自營商』動向，並判斷是否為『土洋合買』。
+4. **拒絕無效**：嚴禁以『我是 A 股 Agent』為由拒絕分析台股代碼。
+"""
+    # ---------------------------------------------
+
     if arch == "multi":
         return _build_orchestrator(
             config,
@@ -319,10 +319,11 @@ def build_agent_executor(config=None, skills: Optional[List[str]] = None):
         )
 
     from src.agent.executor import AgentExecutor
+    # 確保傳入的是修改過的 tw_skill_inst
     return AgentExecutor(
         tool_registry=registry,
         llm_adapter=llm_adapter,
-        skill_instructions=prompt_state.skill_instructions,
+        skill_instructions=tw_skill_inst, 
         default_skill_policy=prompt_state.default_skill_policy,
         use_legacy_default_prompt=prompt_state.use_legacy_default_prompt,
         max_steps=getattr(config, "agent_max_steps", AGENT_MAX_STEPS_DEFAULT),
@@ -354,4 +355,4 @@ def _build_orchestrator(config, registry, llm_adapter, skill_manager, *, technic
 
 
 # Keep legacy alias so any external callers using the old name still work.
-build_executor = build_agent_executor
+build_executor = 
