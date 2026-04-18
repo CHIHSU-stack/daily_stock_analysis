@@ -121,16 +121,41 @@ class FinMindFetcher(BaseFetcher):
             logger.warning(f"獲取融資融券數據失敗: {e}")
             return pd.DataFrame()
 
-    def get_realtime_quote(self, stock_code: str) -> Optional[UnifiedRealtimeQuote]:
-        """獲取 FinMind 即時行情 (若支援)"""
+def get_realtime_quote(self, stock_code: str) -> Optional[UnifiedRealtimeQuote]:
+        """獲取 FinMind 即時行情並整合三大法人籌碼數據"""
         fm_code = self._convert_stock_code(stock_code)
         try:
-            # 使用 FinMind 即時接口
+            # 1. 獲取價格快照
             df = self.api.taiwan_stock_tick_snapshot(stock_ids=[fm_code])
-            if df.empty: return None
+            if df.empty: 
+                return None
             
             row = df.iloc[0]
-            return UnifiedRealtimeQuote(
+            
+            # 2. 獲取籌碼面數據 (近 1 日，即今日買賣超)
+            # 注意：盤中可能尚未更新，FinMind 籌碼通常在 15:30 後更新
+            chip_info = ""
+            try:
+                # 調用我們之前定義的 get_institutional_investors 邏輯
+                from datetime import datetime
+                today_str = datetime.now().strftime('%Y-%m-%d')
+                
+                # 抓取最近 3 天的法人數據以判斷連續性
+                inst_df = self.api.taiwan_stock_institutional_investors(
+                    stock_id=fm_code, 
+                    start_date=(datetime.now() - pd.Timedelta(days=5)).strftime('%Y-%m-%d')
+                )
+                
+                if not inst_df.empty:
+                    # 統計外資與投信近三日的累計買賣
+                    foreign = inst_df[inst_df['name'] == 'Foreign_Investor']['buy'].sum() - inst_df[inst_df['name'] == 'Foreign_Investor']['sell'].sum()
+                    itrust = inst_df[inst_df['name'] == 'Investment_Trust']['buy'].sum() - inst_df[inst_df['name'] == 'Investment_Trust']['sell'].sum()
+                    chip_info = f"近3日外資累計:{int(foreign)}張, 投信累計:{int(itrust)}張"
+            except Exception as chip_err:
+                logger.debug(f"籌碼數據附加失敗: {chip_err}")
+
+            # 3. 建立並回傳物件
+            quote = UnifiedRealtimeQuote(
                 code=stock_code,
                 name=row.get('name', stock_code),
                 source=RealtimeSource.FINMIND,
@@ -142,8 +167,17 @@ class FinMindFetcher(BaseFetcher):
                 high=float(row['high']),
                 low=float(row['low']),
                 pre_close=float(row['last_close']),
-                total_mv=None  # FinMind 快照通常不含市值，需從基本面取
+                total_mv=None
             )
+            
+            # --- 關鍵點：將籌碼數據動態附加到物件中，讓 AI 序列化時能讀到 ---
+            # 我們將數據塞進物件的 __dict__，這樣 runner.py 的 serialize_tool_result 就能抓到它
+            setattr(quote, 'chip_analysis', chip_info)
+            # 如果你的 UnifiedRealtimeQuote 有空閒欄位，也可以直接塞入
+            # quote.turnover_rate = itrust # 假設用週轉率欄位代傳投信數據 (不推薦但可行)
+            
+            return quote
+
         except Exception as e:
-            logger.debug(f"FinMind 即時行情獲取失敗: {e}")
+            logger.error(f"FinMind 即時行情與籌碼獲取失敗: {e}")
             return None
