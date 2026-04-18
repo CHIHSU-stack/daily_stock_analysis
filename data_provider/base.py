@@ -112,6 +112,8 @@ def normalize_stock_code(stock_code: str) -> str:
             return f"HK{base.zfill(5)}"
         if suffix.upper() in ('SH', 'SZ', 'SS', 'BJ') and base.isdigit():
             return base
+        if suffix.upper() in ('TW', 'TWO'):
+            return code.upper()
 
     return code
 
@@ -324,6 +326,9 @@ class BaseFetcher(ABC):
             Tuple: (领涨板块列表, 领跌板块列表)
         """
         return None
+        
+    def get_institutional_orders(self, stock_code: str):
+    return None
 
     def get_daily_data(
         self,
@@ -860,17 +865,15 @@ class DataFetcherManager:
         from .akshare_fetcher import AkshareFetcher
         from .tushare_fetcher import TushareFetcher
         from .pytdx_fetcher import PytdxFetcher
-        from .baostock_fetcher import BaostockFetcher
         from .yfinance_fetcher import YfinanceFetcher
-        from .longbridge_fetcher import LongbridgeFetcher
+        from .finmind_fetcher import FinMindFetcher
         # 创建所有数据源实例（优先级在各 Fetcher 的 __init__ 中确定）
         efinance = EfinanceFetcher()
         akshare = AkshareFetcher()
         tushare = TushareFetcher()  # 会根据 Token 配置自动调整优先级
         pytdx = PytdxFetcher()      # 通达信数据源（可配 PYTDX_HOST/PYTDX_PORT）
-        baostock = BaostockFetcher()
         yfinance = YfinanceFetcher()
-        longbridge = LongbridgeFetcher()  # 长桥（美股/港股兜底，懒加载）
+        finmind = FinMindFetcher()
 
         # 初始化数据源列表
         self._ensure_concurrency_guards()
@@ -880,9 +883,8 @@ class DataFetcherManager:
                 akshare,
                 tushare,
                 pytdx,
-                baostock,
                 yfinance,
-                longbridge,
+                finmind
             ]
 
             # 按优先级排序（Tushare 如果配置了 Token 且初始化成功，优先级为 0）
