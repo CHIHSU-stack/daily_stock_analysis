@@ -35,12 +35,15 @@ class FinMindFetcher(BaseFetcher):
 
     def __init__(self):
         self.api_token = os.getenv("FINMIND_API_KEY") or os.getenv("FINMIND_TOKEN")
-        self.api = DataLoader()
+        # 直接在實例化時傳入 token
         if self.api_token:
-            self.api.login(token=self.api_token)
-            logger.info("FinMind API 登錄成功")
+            self.api = DataLoader()
+            self.api.login_by_token(api_token=self.api_token)
+            logger.info("FinMind API 使用 Token 登錄成功")
         else:
+            self.api = DataLoader()
             logger.warning("未配置 FINMIND_API_KEY，將使用匿名限額模式")
+
 
     def _convert_stock_code(self, stock_code: str) -> str:
         """將 2330.TW 轉換為 FinMind 格式 (2330)"""
