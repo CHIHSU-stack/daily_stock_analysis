@@ -57,10 +57,11 @@ class FinMindFetcher(BaseFetcher):
     def _fetch_raw_data(self, stock_code: str, start_date: str, end_date: str) -> pd.DataFrame:
         """獲取台股日線數據"""
         fm_code = self._convert_stock_code(stock_code)
+        actual_start = (pd.to_datetime(start_date) - pd.Timedelta(days=60)).strftime('%Y-%m-%d')
         try:
             df = self.api.taiwan_stock_daily(
                 stock_id=fm_code,
-                start_date=start_date,
+                start_date=actual_start,
                 end_date=end_date
             )
             if df.empty:
