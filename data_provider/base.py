@@ -853,13 +853,13 @@ class DataFetcherManager:
         优先级动态调整逻辑：
         - 如果配置了 TUSHARE_TOKEN：Tushare 优先级提升为 0（最高）
         - 否则按默认优先级：
-          0. EfinanceFetcher (Priority 0) - 最高优先级
-          1. AkshareFetcher (Priority 1)
-          2. PytdxFetcher (Priority 2) - 通达信
-          2. TushareFetcher (Priority 2)
-          3. BaostockFetcher (Priority 3)
-          4. YfinanceFetcher (Priority 4)
-          5. LongbridgeFetcher (Priority 5) - 长桥（美股/港股兜底）
+          0. FinMind (Priority 0) - 最高优先级
+          1. YfinanceFetcher (Priority 1)
+          2. AkshareFetcher (Priority 2)
+          3. PytdxFetcher (Priority 3) - 通达信
+          4. TushareFetcher (Priority 3)
+          5. EfinanceFetcher (Priority 4)
+        
         """
         from .efinance_fetcher import EfinanceFetcher
         from .akshare_fetcher import AkshareFetcher
@@ -879,12 +879,12 @@ class DataFetcherManager:
         self._ensure_concurrency_guards()
         with self._fetchers_lock:
             self._fetchers = [
+                finmind,
                 efinance,
                 akshare,
                 tushare,
                 pytdx,
-                yfinance,
-                finmind
+                yfinance
             ]
 
             # 按优先级排序（Tushare 如果配置了 Token 且初始化成功，优先级为 0）
