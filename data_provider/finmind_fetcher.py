@@ -127,6 +127,7 @@ class FinMindFetcher(BaseFetcher):
     def get_realtime_quote(self, stock_code: str) -> Optional[UnifiedRealtimeQuote]:
         """獲取 FinMind 即時行情並強制注入法人籌碼指標"""
         fm_code = self._convert_stock_code(stock_code)
+        df = self.api.taiwan_stock_tick_snapshot(stock_ids=[fm_code])
         try:
             # 1. 獲取價格快照
             df = self.api.taiwan_stock_tick_snapshot(stock_ids=[fm_code])
