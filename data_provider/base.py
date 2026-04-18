@@ -328,7 +328,7 @@ class BaseFetcher(ABC):
         return None
         
     def get_institutional_orders(self, stock_code: str):
-    return None
+        return None
 
     def get_daily_data(
         self,
