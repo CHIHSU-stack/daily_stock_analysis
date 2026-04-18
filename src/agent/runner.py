@@ -406,6 +406,30 @@ def run_agent_loop(
     # even when the total budget is small.
     _MIN_STEP_BUDGET_S = 8.0
 
+    try:
+        user_content = next((m["content"] for m in messages if m["role"] == "user"), "")
+        # 簡單正則匹配台股代碼 (例如 2330.TW)
+        match = re.search(r"(\d{4}\.TW(?:O)?)", user_content.upper())
+        if match:
+            stock_code = match.group(1)
+            logger.info(f"檢測到台股分析請求 {stock_code}，正在預載 FinMind 籌碼摘要...")
+            # 從工具註冊表中獲取 FinMindFetcher 實例 (假設它已註冊)
+            # 或者直接調用 API (這裡建議透過 tool_registry 呼叫比較乾淨)
+            fm_res = tool_registry.execute("get_realtime_quote", stock_code=stock_code)
+            # 檢查是否有我們剛剛在 fetcher 裡加入的 chip_analysis 屬性
+            chip_info = getattr(fm_res, 'chip_analysis', '尚無籌碼數據')
+            # 構造籌碼摘要
+            chip_summary = f"\n\n> 💡 【系統預載 - 台股籌碼觀察】\n> 當前標的：{stock_code}\n> 數據摘要：{chip_info}\n> 請分析師在後續報告中結合此籌碼動向進行解讀。"
+            # 注入到 user 的第一條訊息中（不影響 UI，但 AI 會看到）
+            for m in messages:
+                if m["role"] == "user":
+                    m["content"] += chip_summary
+                    break                   
+    except Exception as e:
+        logger.debug(f"籌碼數據預載失敗（非致命錯誤）: {e}")
+
+    
+
     for step in range(max_steps):
         remaining_timeout = _remaining_timeout_seconds(start_time, max_wall_clock_seconds)
         timeout_exhausted = remaining_timeout is not None and remaining_timeout <= 0
