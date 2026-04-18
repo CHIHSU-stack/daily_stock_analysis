@@ -123,44 +123,59 @@ class FinMindFetcher(BaseFetcher):
         except Exception as e:
             logger.warning(f"獲取融資融券數據失敗: {e}")
             return pd.DataFrame()
-
-def get_realtime_quote(self, stock_code: str) -> Optional[UnifiedRealtimeQuote]:
-        """獲取 FinMind 即時行情並整合三大法人籌碼數據"""
+    def get_realtime_quote(self, stock_code: str) -> Optional[UnifiedRealtimeQuote]:
+        """獲取 FinMind 即時行情並強制注入法人籌碼指標"""
         fm_code = self._convert_stock_code(stock_code)
         try:
             # 1. 獲取價格快照
             df = self.api.taiwan_stock_tick_snapshot(stock_ids=[fm_code])
-            if df.empty: 
+            if df.empty:
                 return None
             
             row = df.iloc[0]
+            stock_name = row.get('name', stock_code)
+
+            # 2. 獲取深度籌碼數據 (抓取近 5 日以確保數據連續性)
+            chip_tag = ""
+            inst_summary = "尚無數據"
+            net_buy_volume = 0.0
             
-            # 2. 獲取籌碼面數據 (近 1 日，即今日買賣超)
-            # 注意：盤中可能尚未更新，FinMind 籌碼通常在 15:30 後更新
-            chip_info = ""
             try:
-                # 調用我們之前定義的 get_institutional_investors 邏輯
-                from datetime import datetime
-                today_str = datetime.now().strftime('%Y-%m-%d')
-                
-                # 抓取最近 3 天的法人數據以判斷連續性
+                from datetime import datetime, timedelta
+                # 往前抓 7 天確保能涵蓋到最近 3 個交易日
+                start_dt = (datetime.now() - timedelta(days=7)).strftime('%Y-%m-%d')
                 inst_df = self.api.taiwan_stock_institutional_investors(
-                    stock_id=fm_code, 
-                    start_date=(datetime.now() - pd.Timedelta(days=5)).strftime('%Y-%m-%d')
+                    stock_id=fm_code,
+                    start_date=start_dt
                 )
                 
                 if not inst_df.empty:
-                    # 統計外資與投信近三日的累計買賣
-                    foreign = inst_df[inst_df['name'] == 'Foreign_Investor']['buy'].sum() - inst_df[inst_df['name'] == 'Foreign_Investor']['sell'].sum()
-                    itrust = inst_df[inst_df['name'] == 'Investment_Trust']['buy'].sum() - inst_df[inst_df['name'] == 'Investment_Trust']['sell'].sum()
-                    chip_info = f"近3日外資累計:{int(foreign)}張, 投信累計:{int(itrust)}張"
-            except Exception as chip_err:
-                logger.debug(f"籌碼數據附加失敗: {chip_err}")
+                    # 取最近一個交易日的數據
+                    latest_date = inst_df['date'].max()
+                    latest_inst = inst_df[inst_df['date'] == latest_date]
+                    
+                    # 計算外資與投信買賣超
+                    foreign = latest_inst[latest_inst['name'] == 'Foreign_Investor']
+                    itrust = latest_inst[latest_inst['name'] == 'Investment_Trust']
+                    
+                    f_net = int(foreign['buy'].sum() - foreign['sell'].sum())
+                    i_net = int(itrust['buy'].sum() - itrust['sell'].sum())
+                    net_buy_volume = float(f_net + i_net)
+                    
+                    # 建立標籤 (AI 看到名稱會直接被提示)
+                    f_label = "外資買" if f_net > 0 else "外資賣"
+                    i_label = "投信買" if i_net > 0 else "投信賣"
+                    chip_tag = f"[{f_label}{abs(f_net)}|{i_label}{abs(i_net)}]"
+                    inst_summary = f"日期:{latest_date}, 外資:{f_net}張, 投信:{i_net}張, 土洋買超比:{(net_buy_volume/row['trade_volume']*100):.2f}%"
 
-            # 3. 建立並回傳物件
+            except Exception as ce:
+                logger.debug(f"籌碼計算微調失敗: {ce}")
+
+            # 3. 構造 UnifiedRealtimeQuote
+            # 策略：將 chip_tag 塞進 name，將 net_buy_volume 塞進 turnover_rate
             quote = UnifiedRealtimeQuote(
                 code=stock_code,
-                name=row.get('name', stock_code),
+                name=f"{stock_name} {chip_tag}", # 名稱增強：AI 輸出標題時就會帶入
                 source=RealtimeSource.FINMIND,
                 price=float(row['last_price']),
                 change_pct=round(float(row['change_rate']), 2),
@@ -170,17 +185,19 @@ def get_realtime_quote(self, stock_code: str) -> Optional[UnifiedRealtimeQuote]:
                 high=float(row['high']),
                 low=float(row['low']),
                 pre_close=float(row['last_close']),
+                # 權宜之計：AI 非常看重 turnover_rate，我們把法人買超張數轉化後塞進去
+                turnover_rate=round(net_buy_volume, 2), 
                 total_mv=None
             )
             
-            # --- 關鍵點：將籌碼數據動態附加到物件中，讓 AI 序列化時能讀到 ---
-            # 我們將數據塞進物件的 __dict__，這樣 runner.py 的 serialize_tool_result 就能抓到它
-            setattr(quote, 'chip_analysis', chip_info)
-            # 如果你的 UnifiedRealtimeQuote 有空閒欄位，也可以直接塞入
-            # quote.turnover_rate = itrust # 假設用週轉率欄位代傳投信數據 (不推薦但可行)
-            
+            # 4. 強制注入額外屬性 (供 Runner 序列化)
+            setattr(quote, 'chip_analysis', inst_summary)
+            setattr(quote, 'foreign_net_buy', f_net if 'f_net' in locals() else 0)
+            setattr(quote, 'trust_net_buy', i_net if 'i_net' in locals() else 0)
+
+            logger.info(f"成功注入台股籌碼: {stock_code} -> {inst_summary}")
             return quote
 
         except Exception as e:
-            logger.error(f"FinMind 即時行情與籌碼獲取失敗: {e}")
+            logger.error(f"FinMind 即時行情重寫版獲取失敗: {e}")
             return None
