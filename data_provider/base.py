@@ -65,58 +65,38 @@ def summarize_exception(exc: Exception) -> Tuple[str, str]:
 
 def normalize_stock_code(stock_code: str) -> str:
     """
-    Normalize stock code by stripping exchange prefixes/suffixes.
-
-    Accepted formats and their normalized results:
-    - '600519'      -> '600519'   (already clean)
-    - 'SH600519'    -> '600519'   (strip SH prefix)
-    - 'SZ000001'    -> '000001'   (strip SZ prefix)
-    - 'BJ920748'    -> '920748'   (strip BJ prefix, BSE)
-    - 'sh600519'    -> '600519'   (case-insensitive)
-    - '600519.SH'   -> '600519'   (strip .SH suffix)
-    - '000001.SZ'   -> '000001'   (strip .SZ suffix)
-    - '920748.BJ'   -> '920748'   (strip .BJ suffix, BSE)
-    - 'HK00700'     -> 'HK00700'  (keep HK prefix for HK stocks)
-    - '1810.HK'     -> 'HK01810'  (normalize HK suffix to canonical prefix form)
-    - 'AAPL'        -> 'AAPL'     (keep US stock ticker as-is)
-
-    This function is applied at the DataProviderManager layer so that
-    all individual fetchers receive a clean 6-digit code (for A-shares/ETFs).
+    專為台股優化的代碼正規化函式
+    1. 保持 .TW / .TWO 後綴
+    2. 自動補全純數字為 .TW (選用)
+    3. 統一轉大寫並去除空白
     """
-    code = stock_code.strip()
-    upper = code.upper()
+    if not stock_code:
+        return ""
 
-    # Normalize HK prefix to a canonical 5-digit form (e.g. hk1810 -> HK01810)
-    if upper.startswith('HK') and not upper.startswith('HK.'):
-        candidate = upper[2:]
-        if candidate.isdigit() and 1 <= len(candidate) <= 5:
-            return f"HK{candidate.zfill(5)}"
+    code = stock_code.strip().upper()
 
-    # Strip SH/SZ prefix (e.g. SH600519 -> 600519)
-    if upper.startswith(('SH', 'SZ')) and not upper.startswith('SH.') and not upper.startswith('SZ.'):
-        candidate = code[2:]
-        # Only strip if the remainder looks like a valid numeric code
-        if candidate.isdigit() and len(candidate) in (5, 6):
-            return candidate
+    # 1. 處理台股格式 (直接回傳，不讓後續邏輯動它)
+    if code.endswith(('.TW', '.TWO')):
+        return code
 
-    # Strip BJ prefix (e.g. BJ920748 -> 920748)
-    if upper.startswith('BJ') and not upper.startswith('BJ.'):
-        candidate = code[2:]
-        if candidate.isdigit() and len(candidate) == 6:
-            return candidate
+    # 2. 如果輸入是純數字 (例如 '2330')，自動判定為台股並補上 .TW
+    # 這是防止 Yfinance 誤判為 A 股的關鍵
+    if code.isdigit():
+        if len(code) == 4 or len(code) == 5: # 台股通常是 4 或 5 碼
+            return f"{code}.TW"
+        return code
 
-    # Strip .SH/.SZ/.BJ suffix (e.g. 600519.SH -> 600519, 920748.BJ -> 920748)
-    if '.' in code:
-        base, suffix = code.rsplit('.', 1)
-        if suffix.upper() == 'HK' and base.isdigit() and 1 <= len(base) <= 5:
+    # 3. 處理美股 (例如 'AAPL')
+    if code.isalpha():
+        return code
+
+    # 4. 舊有的 HK 處理邏輯 (保留以防萬一)
+    if code.startswith('HK') or code.endswith('.HK'):
+        base = code.replace('HK', '').replace('.HK', '').strip('.')
+        if base.isdigit():
             return f"HK{base.zfill(5)}"
-        if suffix.upper() in ('SH', 'SZ', 'SS', 'BJ') and base.isdigit():
-            return base
-        if suffix.upper() in ('TW', 'TWO'):
-            return code.upper()
 
     return code
-
 
 ETF_PREFIXES = ("51", "52", "56", "58", "15", "16", "18")
 
