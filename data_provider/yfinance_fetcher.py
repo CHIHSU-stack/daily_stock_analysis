@@ -77,85 +77,64 @@ class YfinanceFetcher(BaseFetcher):
     def __init__(self):
         """初始化 YfinanceFetcher"""
         pass
-
+        
     def _convert_stock_code(self, stock_code: str) -> str:
         """
-        转换股票代码为 Yahoo Finance 格式
-
-        Yahoo Finance 代码格式：
-        - A股沪市：600519.SS (Shanghai Stock Exchange)
-        - A股深市：000001.SZ (Shenzhen Stock Exchange)
-        - 港股：0700.HK (Hong Kong Stock Exchange)
-        - 美股：AAPL, TSLA, GOOGL (无需后缀)
-
-        Args:
-            stock_code: 原始代码，如 '600519', 'hk00700', 'AAPL'
-
-        Returns:
-            Yahoo Finance 格式代码
-
-        Examples:
-            >>> fetcher._convert_stock_code('600519')
-            '600519.SS'
-            >>> fetcher._convert_stock_code('hk00700')
-            '0700.HK'
-            >>> fetcher._convert_stock_code('AAPL')
-            'AAPL'
+        轉換股票代碼為 Yahoo Finance 格式，增加台股 (.TW/.TWO) 支援
         """
         code = stock_code.strip().upper()
 
-        # 美股指数：映射到 Yahoo Finance 符号（如 SPX -> ^GSPC）
+        # 1. 優先處理台股 (防止被後面的 A 股邏輯補上 .SZ)
+        if code.endswith(('.TW', '.TWO')):
+            logger.debug(f"識別為台股代碼: {code}")
+            return code
+
+        # 2. 美股指數映射
         yf_symbol, _ = get_us_index_yf_symbol(code)
         if yf_symbol:
-            logger.debug(f"识别为美股指数: {code} -> {yf_symbol}")
             return yf_symbol
 
-        # 美股：1-5 个大写字母（可选 .X 后缀），原样返回
+        # 3. 美股原樣返回
         if is_us_stock_code(code):
-            logger.debug(f"识别为美股代码: {code}")
             return code
 
-        # 港股：hk前缀 -> .HK后缀
+        # 4. 港股處理
         if code.startswith('HK'):
-            hk_code = code[2:].lstrip('0') or '0'  # 去除前导0，但保留至少一个0
-            hk_code = hk_code.zfill(4)  # 补齐到4位
-            logger.debug(f"转换港股代码: {stock_code} -> {hk_code}.HK")
+            hk_code = code[2:].lstrip('0') or '0'
+            hk_code = hk_code.zfill(4)
             return f"{hk_code}.HK"
 
-        # 已经包含后缀的情况
-        if '.SS' in code or '.SZ' in code or '.HK' in code or '.BJ' in code:
+        # 5. 已有 Yahoo 格式後綴的情況
+        if any(suffix in code for suffix in ['.SS', '.SZ', '.HK', '.BJ']):
             return code
 
-        # 去除可能的 .SH 后缀
+        # 6. 去除可能的舊後綴
         code = code.replace('.SH', '')
 
-        # ETF: Shanghai ETF (51xx, 52xx, 56xx, 58xx) -> .SS; Shenzhen ETF (15xx, 16xx, 18xx) -> .SZ
+        # 7. A 股與 ETF 判斷邏輯
         if len(code) == 6:
-            if code.startswith(('51', '52', '56', '58')):
+            if code.startswith(('51', '52', '56', '58', '600', '601', '603', '688')):
                 return f"{code}.SS"
-            if code.startswith(('15', '16', '18')):
+            if code.startswith(('15', '16', '18', '000', '002', '300')):
                 return f"{code}.SZ"
 
-        # BSE (Beijing Stock Exchange): 8xxxxx, 4xxxxx, 920xxx
+        # 8. 北交所
         if is_bse_code(code):
             base = code.split('.')[0] if '.' in code else code
             return f"{base}.BJ"
 
-        # A股：根据代码前缀判断市场
-        if code.startswith(('600', '601', '603', '688')):
-            return f"{code}.SS"
-        elif code.startswith(('000', '002', '300')):
-            return f"{code}.SZ"
-        else:
-            logger.warning(f"无法确定股票 {code} 的市场，默认使用深市")
-            return f"{code}.SZ"
+        # --- 關鍵修正區塊 ---
+        # 9. 處理純數字 (台股補全)
+        # 如果是 4 或 5 位純數字，高機率是台股，補上 .TW 而不是 .SZ
+        if code.isdigit():
+            if len(code) in (4, 5):
+                logger.info(f"偵測到純數字代碼 {code}，自動補全為台股 .TW")
+                return f"{code}.TW"
+            
+        # 10. 最後的保險：如果不符合以上所有規則，原樣返回 code (不要亂加 .SZ)
+        return code
 
-    @retry(
-        stop=stop_after_attempt(3),
-        wait=wait_exponential(multiplier=1, min=2, max=30),
-        retry=retry_if_exception_type((ConnectionError, TimeoutError)),
-        before_sleep=before_sleep_log(logger, logging.WARNING),
-    )
+    
     def _fetch_raw_data(self, stock_code: str, start_date: str, end_date: str) -> pd.DataFrame:
         """
         从 Yahoo Finance 获取原始数据
