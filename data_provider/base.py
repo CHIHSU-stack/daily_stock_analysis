@@ -1441,25 +1441,9 @@ class DataFetcherManager:
 
     def get_stock_name(self, stock_code: str, allow_realtime: bool = True) -> Optional[str]:
         """
-        获取股票中文名称（自动切换数据源）
-        
-        尝试从多个数据源获取股票名称：
-        1. 先从内存缓存中获取（如果有）
-        2. 再尝试本地维护映射与 stocks.index.json 索引
-        3. 然后按需查询实时行情
-        4. 依次尝试各个数据源的 get_stock_name 方法
-        
-        Args:
-            stock_code: 股票代码
-            allow_realtime: Whether to query realtime quote first. Set False when
-                caller only wants lightweight prefetch without triggering heavy
-                realtime source calls.
-            
-        Returns:
-            股票中文名称，所有数据源都失败则返回 None
+        获取股票中文名称（自动切换数据源 - 全球市场隔离版）
         """
         raw_stock_code = (stock_code or "").strip()
-        # Normalize code (strip SH/SZ prefix etc.)
         stock_code = normalize_stock_code(stock_code)
         static_name = STOCK_NAME_MAP.get(stock_code)
 
@@ -1484,17 +1468,39 @@ class DataFetcherManager:
                 logger.info(f"[股票名称] 从实时行情获取: {stock_code} -> {name}")
                 return name
 
-        # 3. 依次尝试各个数据源
-        from .akshare_fetcher import _is_us_code
-        is_us = _is_us_code(stock_code)
+        # 3. 依次尝试各个数据源 (加入严格的市场隔离机制)
+        upper_code = stock_code.upper()
+        is_tw = upper_code.endswith(('.TW', '.TWO'))
+        
+        try:
+            from .akshare_fetcher import _is_us_code
+            is_us = _is_us_code(stock_code)
+        except ImportError:
+            # 备用判断：如果没有该函数，纯英文字母即视为美股
+            is_us = upper_code.isalpha() 
+
+        # 定义各市场专属的安全 Fetcher
         _US_CAPABLE_FETCHERS = {"YfinanceFetcher", "LongbridgeFetcher"}
+        _TW_CAPABLE_FETCHERS = {"FinMindFetcher", "YfinanceFetcher"}
+
         for fetcher in self._get_fetchers_snapshot():
             if not hasattr(fetcher, 'get_stock_name'):
                 continue
+                
+            # --- 🔴 核心修复：阻断 A股 Fetcher 污染台股与美股 ---
             if is_us and fetcher.name not in _US_CAPABLE_FETCHERS:
                 continue
+            if is_tw and fetcher.name not in _TW_CAPABLE_FETCHERS:
+                continue
+
             try:
-                name = self._call_fetcher_method(fetcher, 'get_stock_name', stock_code)
+                query_code = stock_code
+                # 针对 FinMind 优化：如果是台股，传入纯数字让其更易于比对
+                if is_tw and fetcher.name == "FinMindFetcher":
+                    query_code = upper_code.replace('.TW', '').replace('.TWO', '')
+
+                name = self._call_fetcher_method(fetcher, 'get_stock_name', query_code)
+                
                 if is_meaningful_stock_name(name, stock_code):
                     self._cache_stock_name(stock_code, name)
                     logger.info(f"[股票名称] 从 {fetcher.name} 获取: {stock_code} -> {name}")
