@@ -294,43 +294,50 @@ def build_agent_executor(config=None, skills: Optional[List[str]] = None):
 
     llm_adapter = LLMToolAdapter(config)
 
-    # --- 🟢 核心修改：解鎖台股身份與注入籌碼指令 ---
-    # 1. 取得原始指令並抹除「僅限A股」的字眼
+    # --- 🟢 核心修改：徹底解除 A 股身份鎖定與台股籌碼注入 ---
+    
+    # 1. 處理技能指令 (Skill Instructions)
     raw_inst = prompt_state.skill_instructions
     tw_skill_inst = raw_inst.replace("A股", "股票").replace("A 股", "股票")
     
-    # 2. 注入台股專屬規則
-    tw_skill_inst += """
+    # 2. 處理預設政策 (Default Skill Policy) - 這是日誌中「你是 A 股 Agent」的源頭
+    raw_policy = prompt_state.default_skill_policy
+    tw_skill_policy = raw_policy.replace("A股", "股票").replace("A 股", "股票")
+    tw_skill_policy = tw_skill_policy.replace("中国沪深交易所上市股票", "全球市場股票（含台股 .TW/.TWO）")
+    tw_skill_policy = tw_skill_policy.replace("关注 A 股特有", "關注各市場")
+
+    # 3. 注入台股專屬規則 (強制 AI 讀取籌碼數據)
+    tw_extra_rules = """
 \n## 台股分析特別指令 (Taiwan Market Support)
-1. **身份宣告**：你現在支援全球市場分析，包含 A股、美股與【台股 (.TW/.TWO)】。
-2. **籌碼優先**：分析台股時，必須優先檢查工具回傳中的 `chip_analysis` 欄位。
-3. **專業術語**：請識別『外資』、『投信』、『自營商』動向，並判斷是否為『土洋合買』。
-4. **拒絕無效**：嚴禁以『我是 A 股 Agent』為由拒絕分析台股代碼。
+1. **身份宣告**：你支援 A股、美股與【台股 (.TW/.TWO)】分析，不再受限於單一市場。
+2. **籌碼優先**：台股分析必須解析『chip_analysis』欄位，包含外資、投信與自營商的買賣超數據。
+3. **拒絕無效**：嚴禁以市場限制為由拒絕分析台股。如果數據獲取失敗，請直接說明數據源問題而非市場限制。
 """
-    # ---------------------------------------------
+    # 合併最終指令
+    final_skill_instructions = tw_skill_inst + tw_extra_rules
+    # ------------------------------------------------------------------
 
     if arch == "multi":
+        # 如果是 multi 模式，也同步修正其使用的 policy
         return _build_orchestrator(
             config,
             registry,
             llm_adapter,
             skill_manager,
-            technical_skill_policy=prompt_state.technical_skill_policy,
+            technical_skill_policy=prompt_state.technical_skill_policy.replace("A股", "股票"),
         )
 
     from src.agent.executor import AgentExecutor
-    # 確保傳入的是修改過的 tw_skill_inst
     return AgentExecutor(
         tool_registry=registry,
         llm_adapter=llm_adapter,
-        skill_instructions=tw_skill_inst, 
-        default_skill_policy=prompt_state.default_skill_policy,
+        skill_instructions=final_skill_instructions,  # 使用洗腦後的 Inst
+        default_skill_policy=tw_skill_policy,       # 使用洗腦後的 Policy
         use_legacy_default_prompt=prompt_state.use_legacy_default_prompt,
         max_steps=getattr(config, "agent_max_steps", AGENT_MAX_STEPS_DEFAULT),
         timeout_seconds=getattr(config, "agent_orchestrator_timeout_s", 0),
     )
-
-
+  
 def _build_orchestrator(config, registry, llm_adapter, skill_manager, *, technical_skill_policy: str = ""):
     """Build and return an :class:`AgentOrchestrator` (multi-agent mode).
 
