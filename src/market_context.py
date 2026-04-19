@@ -17,12 +17,16 @@ def detect_market(stock_code: Optional[str]) -> str:
     """Detect market from stock code.
 
     Returns:
-        One of 'cn', 'hk', 'us', or 'cn' as fallback.
+        One of 'tw', 'cn', 'hk', 'us', or 'cn' as fallback.
     """
     if not stock_code:
         return "cn"
 
     code = stock_code.strip().upper()
+
+    # --- 🟢 新增：台股判斷邏輯 ---
+    if code.endswith(".TW") or code.endswith(".TWO"):
+        return "tw"
 
     # HK stocks: HK00700, 00700.HK, or 5-digit pure numbers
     if code.startswith("HK") or code.endswith(".HK"):
@@ -47,7 +51,7 @@ def detect_market(stock_code: Optional[str]) -> str:
 
 _MARKET_ROLES = {
     "cn": {
-        "zh": " A 股",
+        "zh": " A股",
         "en": "China A-shares",
     },
     "hk": {
@@ -57,6 +61,11 @@ _MARKET_ROLES = {
     "us": {
         "zh": "美股",
         "en": "US stock",
+    },
+    # --- 🟢 新增：台股角色 ---
+    "tw": {
+        "zh": "台股",
+        "en": "Taiwan stock",
     },
 }
 
@@ -91,34 +100,29 @@ _MARKET_GUIDELINES = {
             "- US stocks have no daily price limits (but have circuit breakers), allow T+0 and pre/after-market trading. Consider USD FX, Fed policy, and SEC regulations."
         ),
     },
+    # --- 🟢 新增：台股專屬分析指南 ---
+    "tw": {
+        "zh": (
+            "- 本次分析對象為 **台股**（台灣證券交易所/櫃買中心上市股票）。\n"
+            "- 請關注台股特有的漲跌幅限制（±10%）、T+2 交割制度，並**務必深度解析三大法人（外資、投信、自營商）的籌碼動向**。"
+        ),
+        "en": (
+            "- This analysis covers a **Taiwan stock** (listed on TWSE/TPEx).\n"
+            "- Consider TW-specific rules: daily price limits (±10%), T+2 settlement, and **closely monitor the fund flows of the Three Institutional Investors**."
+        ),
+    },
 }
 
 
 def get_market_role(stock_code: Optional[str], lang: str = "zh") -> str:
-    """Return market-specific role description for LLM prompt.
-
-    Args:
-        stock_code: The stock code being analyzed.
-        lang: 'zh' or 'en'.
-
-    Returns:
-        Role string like 'A 股投资分析' or 'US stock investment analysis'.
-    """
+    """Return market-specific role description for LLM prompt."""
     market = detect_market(stock_code)
     lang_key = "en" if lang == "en" else "zh"
     return _MARKET_ROLES.get(market, _MARKET_ROLES["cn"])[lang_key]
 
 
 def get_market_guidelines(stock_code: Optional[str], lang: str = "zh") -> str:
-    """Return market-specific analysis guidelines for LLM prompt.
-
-    Args:
-        stock_code: The stock code being analyzed.
-        lang: 'zh' or 'en'.
-
-    Returns:
-        Multi-line string with market-specific guidelines.
-    """
+    """Return market-specific analysis guidelines for LLM prompt."""
     market = detect_market(stock_code)
     lang_key = "en" if lang == "en" else "zh"
     return _MARKET_GUIDELINES.get(market, _MARKET_GUIDELINES["cn"])[lang_key]
