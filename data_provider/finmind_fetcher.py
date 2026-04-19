@@ -33,8 +33,8 @@ class FinMindFetcher(BaseFetcher):
     # 預設優先級設為 0，讓它在台股分析中排在第一位
     priority = int(os.getenv("FINMIND_PRIORITY", "0"))
 
-    def __init__(self, config=None):
-        super().__init__(config)
+    def __init__(self):
+        # 移除 config 參數與 super().__init__(config)
         # 🟢 初始化台股名稱快取，避免頻繁請求 API
         self._stock_info_cache: Optional[pd.DataFrame] = None
         
@@ -46,6 +46,8 @@ class FinMindFetcher(BaseFetcher):
             logger.info("FinMind API 使用 Token 登錄成功")
         else:
             logger.warning("未配置 FINMIND_API_KEY，將使用匿名限額模式")
+        
+    
 
     def _convert_stock_code(self, stock_code: str) -> str:
         """將 2330.TW 轉換為 FinMind 格式 (2330)"""
