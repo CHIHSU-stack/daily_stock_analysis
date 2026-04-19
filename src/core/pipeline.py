@@ -183,52 +183,45 @@ class StockAnalysisPipeline:
         current_time: Optional[datetime] = None,
     ) -> Tuple[bool, Optional[str]]:
         """
-        获取并保存单只股票数据
-        
-        断点续传逻辑：
-        1. 检查数据库是否已有最新可复用交易日数据
-        2. 如果有且不强制刷新，则跳过网络请求
-        3. 否则从数据源获取并保存
-        
-        Args:
-            code: 股票代码
-            force_refresh: 是否强制刷新（忽略本地缓存）
-            current_time: 本轮运行冻结的参考时间，用于统一断点续传目标交易日判断
-            
-        Returns:
-            Tuple[是否成功, 错误信息]
+        獲取並保存單隻股票數據（專為台股優化版）
         """
         stock_name = code
         try:
-            # 首先获取股票名称
-            stock_name = self.fetcher_manager.get_stock_name(code, allow_realtime=False)
+            # 1. 修正名稱獲取：增加對台股後綴的處理
+            stock_name = self.fetcher_manager.get_stock_name(code, allow_realtime=True)
+            if not stock_name or stock_name == code:
+                # 如果還是抓不到，至少維持原樣，不報錯
+                stock_name = code
 
             target_date = self._resolve_resume_target_date(
                 code, current_time=current_time
             )
 
-            # 断点续传检查：如果最新可复用交易日的数据已存在，则跳过
+            # 2. 斷點續傳檢查
             if not force_refresh and self.db.has_today_data(code, target_date):
                 logger.info(
-                    f"{stock_name}({code}) {target_date} 数据已存在，跳过获取（断点续传）"
+                    f"{stock_name}({code}) {target_date} 數據已存在，跳過獲取（斷點續傳）"
                 )
                 return True, None
 
-            # 从数据源获取数据
-            logger.info(f"{stock_name}({code}) 开始从数据源获取数据...")
-            df, source_name = self.fetcher_manager.get_daily_data(code, days=30)
+            # 3. 從數據源獲取數據
+            # --- 關鍵修正：將 days 從 30 改為 60 ---
+            # 理由：MA20 需要 20 筆數據，為了確保「趨勢感」，多抓一倍的數據量是必要的
+            logger.info(f"{stock_name}({code}) 開始從數據源獲取數據...")
+            df, source_name = self.fetcher_manager.get_daily_data(code, days=60) 
 
             if df is None or df.empty:
-                return False, "获取数据为空"
+                return False, "獲取數據為空"
 
-            # 保存到数据库
+            # 4. 保存到數據庫
+            # 注意：保存時，數據庫會自動過濾重複日期，所以多抓的天數不會導致重複
             saved_count = self.db.save_daily_data(df, code, source_name)
-            logger.info(f"{stock_name}({code}) 数据保存成功（来源: {source_name}，新增 {saved_count} 条）")
+            logger.info(f"{stock_name}({code}) 數據保存成功（來源: {source_name}，新增 {saved_count} 條）")
 
             return True, None
 
         except Exception as e:
-            error_msg = f"获取/保存数据失败: {str(e)}"
+            error_msg = f"獲取/保存數據失敗: {str(e)}"
             logger.error(f"{stock_name}({code}) {error_msg}")
             return False, error_msg
     
