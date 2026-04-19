@@ -409,34 +409,47 @@ class BaseFetcher(ABC):
         df = df.sort_values('date', ascending=True).reset_index(drop=True)
         
         return df
-    
+        
     def _calculate_indicators(self, df: pd.DataFrame) -> pd.DataFrame:
         """
-        计算技术指标
-        
-        计算指标：
-        - MA5, MA10, MA20: 移动平均线
-        - Volume_Ratio: 量比（今日成交量 / 5日平均成交量）
+        計算技術指標（修正版：增加排序與計算容錯）
         """
+        if df is None or df.empty:
+            return df
+            
         df = df.copy()
-        df['ma5'] = df['close'].rolling(window=5).mean()
-        df['ma10'] = df['close'].rolling(window=10).mean()
-        df['ma20'] = df['close'].rolling(window=20).mean()
+
+        # --- 關鍵修正 1：確保日期由舊到新排序 ---
+        # 這是計算移動平均線 (MA) 的生命線
+        if 'date' in df.columns:
+            df['date'] = pd.to_datetime(df['date'])
+            df = df.sort_values('date', ascending=True).reset_index(drop=True)
+
+        # --- 關鍵修正 2：數值轉型與空值處理 ---
+        for col in ['close', 'volume']:
+            df[col] = pd.to_numeric(df[col], errors='coerce')
+
+        # --- 關鍵修正 3：增加 min_periods 避免 NaN ---
+        # 即使只有 5 筆資料，也能算出 MA20 的當前平均值，減少報告出現空值的機會
+        df['ma5'] = df['close'].rolling(window=5, min_periods=1).mean()
+        df['ma10'] = df['close'].rolling(window=10, min_periods=1).mean()
+        df['ma20'] = df['close'].rolling(window=20, min_periods=1).mean()
         
-        # 量比：当日成交量 / 5日平均成交量
-        # 注意：此处的 volume_ratio 是“日线成交量 / 前5日均量(shift 1)”的相对倍数，
-        # 与部分交易软件口径的“分时量比（同一时刻对比）”不同，含义更接近“放量倍数”。
-        # 该行为目前保留（按需求不改逻辑）。
+        # 量比計算
         avg_volume_5 = df['volume'].rolling(window=5, min_periods=1).mean()
+        # 使用 shift(1) 是正確的，代表对比前5日的平均量
         df['volume_ratio'] = df['volume'] / avg_volume_5.shift(1)
-        df['volume_ratio'] = df['volume_ratio'].fillna(1.0)
+        df['volume_ratio'] = df['volume_ratio'].replace([float('inf'), -float('inf')], 1.0).fillna(1.0)
         
-        # 保留2位小数
+        # 保留 2 位小數
         for col in ['ma5', 'ma10', 'ma20', 'volume_ratio']:
             if col in df.columns:
                 df[col] = df[col].round(2)
         
+        # 如果你希望報告顯示的是最新日期在上面，可以在回傳前反轉，
+        # 但通常建議保持由舊到新，讓 AI 易於理解趨勢
         return df
+   
     
     @staticmethod
     def random_sleep(min_seconds: float = 1.0, max_seconds: float = 3.0) -> None:
